@@ -3,6 +3,11 @@ import axios from "axios";
 import VideoPlayer from "./components/VideoPlayer";
 import CCList from "./components/CCList";
 
+const BASE_URL =
+  import.meta.env.MODE === "development"
+    ? "http://127.0.0.1:8000"
+    : "https://momouchi-v2-backend.onrender.com";
+
 export default function App() {
   const [url, setUrl] = useState("");
   const [captions, setCaptions] = useState([]);
@@ -10,7 +15,7 @@ export default function App() {
 
   const handleFetch = async () => {
     try {
-      const res = await axios.get("http://127.0.0.1:8000/captions/", {
+      const res = await axios.get(`${BASE_URL}/captions/`, {
         params: { video_url: url },
       });
       if (res.data.captions) {
