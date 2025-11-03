@@ -3,10 +3,7 @@ import axios from "axios";
 import VideoPlayer from "./components/VideoPlayer";
 import CCList from "./components/CCList";
 
-const BASE_URL =
-  import.meta.env.MODE === "development"
-    ? "http://127.0.0.1:8000"
-    : "https://momouchi-v2-backend.onrender.com";
+const BASE_URL = import.meta.env.VITE_BACKEND_URL
 
 export default function App() {
   const [url, setUrl] = useState("");
