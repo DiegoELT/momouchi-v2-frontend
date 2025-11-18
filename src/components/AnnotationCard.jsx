@@ -3,13 +3,19 @@ import { useEffect, useState, useRef } from "react";
 const LABEL_COLORS = {
   "Play by Play": "bg-blue-100",
   "Storytelling": "bg-pink-100",
-  "Analysis": "bg-green-100",
-  "Hype / Reaction": "bg-yellow-100",
-  Custom: "bg-purple-100",
-  None: "bg-gray-50",
+  "Game Analysis": "bg-green-100",
+  "Meta Analysis": "bg-lime-100",
+  "Hype": "bg-yellow-100",
+  "Jokes / Humor": "bg-teal-100",
+  "Personal": "bg-orange-100",
+  "Audience Interaction": "bg-indigo-100",
+  "Replay": "bg-red-100",
+  "Technical / Filler": "bg-gray-100",
+  "Custom": "bg-purple-100",
+  "None": "bg-gray-50",
 };
 
-export default function AnnotationCard({ caption, onChange, onSeek }) {
+export default function AnnotationCard({ caption, onChange, onSeek, onCopyPrevious }) {
   const cardRef = useRef(null);
   const [text, setText] = useState(caption.text);
   const [label, setLabel] = useState(caption.label || "None");
@@ -48,17 +54,35 @@ export default function AnnotationCard({ caption, onChange, onSeek }) {
     if (selected !== "Custom") setCustomLabel("");
   };
 
+  const handleCopyPrevious = () => {
+    if (onCopyPrevious) {
+      const prev = onCopyPrevious(caption.id);
+      if (prev) {
+        setLabel(prev.label);
+        setCustomLabel(prev.customLabel || "");
+      }
+    }
+  };
+
   const bgColor = LABEL_COLORS[label] || LABEL_COLORS["None"];
 
   return (
     <div ref={cardRef} className={`border p-2 mb-2 rounded transition-colors ${bgColor}`}>
-      <p
-        onClick={handleTimeClick}
-        className="text-sm text-blue-600 cursor-pointer font-medium hover:underline"
-      >
-        {Number(caption.start).toFixed(1)}s →{" "}
-        {Number(caption.start + caption.duration).toFixed(1)}s
-      </p>
+      <div className="flex justify-between items-center">
+        <p
+          onClick={handleTimeClick}
+          className="text-sm text-blue-600 cursor-pointer font-medium hover:underline"
+        >
+          {Number(caption.start).toFixed(1)}s →{" "}
+          {Number(caption.start + caption.duration).toFixed(1)}s
+        </p>
+        <button
+          onClick={handleCopyPrevious}
+          className="text-xs bg-gray-200 hover:bg-gray-300 px-2 py-1 rounded"
+        >
+          Same as Previous
+        </button>
+      </div>
 
       <textarea
         value={text}
@@ -74,8 +98,14 @@ export default function AnnotationCard({ caption, onChange, onSeek }) {
         <option value="None">No Label</option>
         <option value="Play by Play">Play by Play</option>
         <option value="Storytelling">Storytelling</option>
-        <option value="Analysis">Analysis</option>
-        <option value="Hype / Reaction">Hype / Reaction</option>
+        <option value="Game Analysis">Game Analysis</option>
+        <option value="Meta Analysis">Meta Analysis</option>
+        <option value="Hype">Hype</option>
+        <option value="Jokes / Humor">Jokes / Humor</option>
+        <option value="Personal">Personal</option>
+        <option value="Audience Interaction">Audience Interaction</option>
+        <option value="Replay">Replay</option>
+        <option value="Technical / Filler">Technical / Filler</option>
         <option value="Custom">Custom...</option>
       </select>
 

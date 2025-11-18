@@ -2,12 +2,16 @@ import { useState, useRef } from "react";
 import axios from "axios";
 import VideoPlayer from "./components/VideoPlayer";
 import CCList from "./components/CCList";
+import { parseTimeInput, formatTime } from "./utils/time";
 
-const BASE_URL = import.meta.env.VITE_BACKEND_URL
+const BASE_URL = import.meta.env.VITE_BACKEND_URL;
 
 export default function App() {
   const [url, setUrl] = useState("");
   const [captions, setCaptions] = useState([]);
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
+
   const playerRef = useRef(null);
 
   const handleFetch = async () => {
@@ -16,37 +20,45 @@ export default function App() {
         params: { video_url: url },
       });
       if (res.data.captions) {
-        setCaptions(res.data.captions);
+        let loadedCaptions = res.data.captions;
+
+        // ⏱️ If start/end range is specified, filter captions
+        if (startTime || endTime) {
+          const start = parseTimeInput(startTime) ?? 0;
+          const end = parseTimeInput(endTime) ?? Number.MAX_SAFE_INTEGER;
+
+          loadedCaptions = loadedCaptions.filter(
+            (cap) => cap.start + cap.duration > start && cap.start < end
+          );
+        }
+
+        setCaptions(loadedCaptions);
       } else {
         alert("No captions found");
       }
     } catch (err) {
       console.error(err);
+      alert("Error fetching captions.");
     }
   };
 
-  // Pass this function to the CCList so it can control the video
   const handleSeek = (time) => {
     if (playerRef.current) {
-      // react-player uses "seconds" as the unit
       playerRef.current.seekTo(time, "seconds");
     }
   };
 
   const handleCaptionUpdate = (updatedCaption) => {
     setCaptions((prev) =>
-      prev.map((c) =>
-        c.start === updatedCaption.start ? updatedCaption : c
-      )
+      prev.map((c) => (c.start === updatedCaption.start ? updatedCaption : c))
     );
   };
 
   const saveAnnotations = () => {
-    const data = {
-      video_url: url,
-      captions,
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const data = { video_url: url, captions };
+    const blob = new Blob([JSON.stringify(data, null, 2)], {
+      type: "application/json",
+    });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
     link.download = "annotations.json";
@@ -63,12 +75,12 @@ export default function App() {
         const data = JSON.parse(e.target.result);
 
         if (data.video_url) {
-          setUrl(data.video_url); // Load video
+          setUrl(data.video_url);
         }
 
         if (Array.isArray(data.captions)) {
-          setCaptions(data.captions); // Load captions
-          alert(`Loaded ${data.captions.length} annotations for video: ${data.video_url}`);
+          setCaptions(data.captions);
+          alert(`Loaded ${data.captions.length} annotations.`);
         } else {
           alert("Invalid file format: captions missing.");
         }
@@ -89,31 +101,49 @@ export default function App() {
       </div>
 
       {/* Middle Column */}
-        <div className="flex-1 p-6 flex flex-col items-center overflow-y-auto">
-          <h1 className="text-2xl font-bold mb-4">
-            <span className="text-sky-300">Momouchi-v2:</span> LoL VoD Annotation Tool
-          </h1>
+      <div className="flex-1 p-6 flex flex-col items-center overflow-y-auto">
+        <h1 className="text-2xl font-bold mb-4">
+          <span className="text-sky-300">Momouchi-v2:</span> LoL VoD Annotation Tool
+        </h1>
 
-          {/* Search Bar */}
-        <div className="flex gap-2 mb-6 w-full justify-center">
-          <input
-            type="text"
-            placeholder="Paste YouTube URL..."
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            className="border p-2 w-3/5 rounded"
-          />
-          <button
-            onClick={handleFetch}
-            className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-          >
-            Load
-          </button>
+        {/* Search & Range Inputs */}
+        <div className="flex flex-col items-center gap-3 mb-6 w-full max-w-3xl">
+          <div className="flex gap-2 w-full justify-center">
+            <input
+              type="text"
+              placeholder="Paste YouTube URL..."
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              className="border p-2 flex-1 rounded"
+            />
+            <button
+              onClick={handleFetch}
+              className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+            >
+              Load
+            </button>
+          </div>
+
+          <div className="flex gap-2 w-full justify-center">
+            <input
+              type="text"
+              placeholder="Start time (mm:ss)"
+              value={startTime}
+              onChange={(e) => setStartTime(e.target.value)}
+              className="border p-2 w-1/3 rounded"
+            />
+            <input
+              type="text"
+              placeholder="End time (mm:ss)"
+              value={endTime}
+              onChange={(e) => setEndTime(e.target.value)}
+              className="border p-2 w-1/3 rounded"
+            />
+          </div>
         </div>
 
         {/* Video Player */}
         <div className="w-full flex justify-center">
-          
           {url ? (
             <div className="w-full max-w-3xl h-[405px]">
               <VideoPlayer ref={playerRef} url={url} controls width="100%" height="100%" />
@@ -141,7 +171,7 @@ export default function App() {
         {/* Fixed Bottom Controls */}
         <div className="border-t p-3 bg-gray-50 flex justify-center gap-2 sticky bottom-0 shadow-inner">
           <button
-            onClick={() => saveAnnotations()}
+            onClick={saveAnnotations}
             className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
           >
             Save JSON
