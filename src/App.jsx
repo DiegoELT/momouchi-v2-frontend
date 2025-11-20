@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import axios from "axios";
 import VideoPlayer from "./components/VideoPlayer";
 import CCList from "./components/CCList";
+import MatchInfo from "./components/MatchInfo";
 import { parseTimeInput, formatTime } from "./utils/time";
 
 const BASE_URL = import.meta.env.VITE_BACKEND_URL;
@@ -11,8 +12,22 @@ export default function App() {
   const [captions, setCaptions] = useState([]);
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
+  const [matchInfo, setMatchInfo] = useState(null); 
 
   const playerRef = useRef(null);
+
+  const fetchMatchInfo = async (videoUrl) => {
+    try {
+      const res = await axios.get(`${BASE_URL}/match_details/`, {
+        params: { video_url: videoUrl },
+      });
+      setMatchInfo(res.data.matches || []);
+      console.log(res.data);
+    } catch (err) {
+      console.error("Failed to fetch match info:", err);
+      setMatchInfo([]);
+    }
+  };
 
   const handleFetch = async () => {
     try {
@@ -33,6 +48,7 @@ export default function App() {
         }
 
         setCaptions(loadedCaptions);
+        fetchMatchInfo(url);
       } else {
         alert("No captions found");
       }
@@ -55,7 +71,7 @@ export default function App() {
   };
 
   const saveAnnotations = () => {
-    const data = { video_url: url, captions };
+    const data = { video_url: url, captions, matchInfo };
     const blob = new Blob([JSON.stringify(data, null, 2)], {
       type: "application/json",
     });
@@ -83,6 +99,10 @@ export default function App() {
           alert(`Loaded ${data.captions.length} annotations.`);
         } else {
           alert("Invalid file format: captions missing.");
+        }
+
+        if (data.matchInfo) {
+          setMatchInfo(data.matchInfo);
         }
       } catch (err) {
         console.error("Error reading file:", err);
@@ -154,6 +174,9 @@ export default function App() {
             </div>
           )}
         </div>
+
+        {/* Match Info */}
+        <MatchInfo matches={matchInfo} />
       </div>
 
       {/* Right Sidebar */}
