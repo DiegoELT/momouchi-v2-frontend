@@ -169,8 +169,7 @@ export default function AnnotationCard({
           onClick={handleSeek}
           className="text-sm text-blue-600 cursor-pointer font-medium hover:underline"
         >
-          {Number(caption.start).toFixed(1)}s →{" "}
-          {Number(caption.start + caption.duration).toFixed(1)}s
+          {formatTime(caption.start)} → {formatTime(caption.start + caption.duration)}
         </p>
 
         <button
