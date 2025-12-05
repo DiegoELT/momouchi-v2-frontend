@@ -1,10 +1,11 @@
 import { useEffect, useState, useRef } from "react";
+import CCEventItem from "./CCEventItem";
+import { COLOR_MAP } from "./CCEventItem";
 
 const LABEL_COLORS = {
   "Play by Play": "bg-blue-100",
   "Storytelling": "bg-pink-100",
-  "Game Analysis": "bg-green-100",
-  "Meta Analysis": "bg-lime-100",
+  "Analysis": "bg-green-100",
   "Hype": "bg-yellow-100",
   "Jokes / Humor": "bg-teal-100",
   "Personal": "bg-orange-100",
@@ -15,69 +16,171 @@ const LABEL_COLORS = {
   "None": "bg-gray-50",
 };
 
-export default function AnnotationCard({ caption, onChange, onSeek, onCopyPrevious }) {
+function formatTime(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+export default function AnnotationCard({
+  caption,
+  isEvent = false,
+  onChange,
+  onSeek,
+  onCopyPrevious,
+  onDelete,
+}) {
   const cardRef = useRef(null);
-  const [text, setText] = useState(caption.text);
+
+  // ---- Caption state ----
+  const [text, setText] = useState(caption.text ?? caption.caption ?? "");
   const [label, setLabel] = useState(caption.label || "None");
   const [customLabel, setCustomLabel] = useState(caption.customLabel || "");
   const [comment, setComment] = useState(caption.comment || "");
 
-  // 🧠 Sync local state when new captions are loaded
+  // ---- Event state ----
+  const [editingEvent, setEditingEvent] = useState(false);
+  const [eventType, setEventType] = useState(
+    caption.eventType || caption.event || "Fight"
+  );
+  const [description, setDescription] = useState(
+    caption.description || caption.desc || ""
+  );
+
   useEffect(() => {
-    setText(caption.text);
+    setText(caption.text ?? caption.caption ?? "");
     setLabel(caption.label || "None");
     setCustomLabel(caption.customLabel || "");
     setComment(caption.comment || "");
+
+    setEventType(caption.eventType || caption.event || "Fight");
+    setDescription(caption.description || caption.desc || "");
   }, [caption]);
 
-  // 🔄 Notify parent when user edits anything
+  // ---- Caption auto-save to parent ----
   useEffect(() => {
-    onChange({
-      ...caption,
-      text,
-      label,
-      customLabel,
-      comment,
-    });
-  }, [text, label, customLabel, comment]);
+    if (!isEvent) {
+      onChange &&
+        onChange({
+          ...caption,
+          text,
+          label,
+          customLabel,
+          comment,
+        });
+    }
+  }, [text, label, customLabel, comment]); // eslint-disable-line
 
-  const handleTimeClick = () => {
+  // ---- Save event edits (manual save only) ----
+  const saveEventEdits = () => {
+    onChange &&
+      onChange({
+        ...caption,
+        time: caption.time ?? caption.start,
+        eventType,
+        description,
+        id: caption.id,
+      });
+
+    setEditingEvent(false);
+  };
+
+  const handleSeek = () => {
     if (cardRef.current) {
       cardRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
     }
-    if (onSeek) onSeek(caption.start);
+    onSeek?.(caption.start ?? caption.time);
   };
 
-  const handleLabelChange = (e) => {
-    const selected = e.target.value;
-    setLabel(selected);
-    if (selected !== "Custom") setCustomLabel("");
-  };
+  if (isEvent) {
+    return (
+      <div ref={cardRef}>
+        {!editingEvent ? (
+          <CCEventItem
+            event={{
+              id: caption.id,
+              eventType,
+              description,
+              time: caption.time ?? caption.start,
+            }}
+            onEdit={() => setEditingEvent(true)}
+            onDelete={onDelete}
+          />
+        ) : (
+          <div className={`border rounded mb-2 p-3 ${COLOR_MAP[eventType]} text-black`}>
+            <div className="font-semibold">Edit Event</div>
 
-  const handleCopyPrevious = () => {
-    if (onCopyPrevious) {
-      const prev = onCopyPrevious(caption.id);
-      if (prev) {
-        setLabel(prev.label);
-        setCustomLabel(prev.customLabel || "");
-      }
-    }
-  };
+            <div className="mt-2 space-y-2">
+              <select
+                value={eventType}
+                onChange={(e) => setEventType(e.target.value)}
+                className="w-full p-1 rounded text-black border"
+              >
+                <option>Dragon</option>
+                <option>Tower</option>
+                <option>Grubs</option>
+                <option>Herald</option>
+                <option>Baron</option>
+                <option>Fight</option>
+              </select>
+
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className="w-full p-1 rounded text-black border font-mono text-sm"
+                rows={3}
+              />
+            </div>
+
+            <div className="flex gap-2 mt-3">
+              <button
+                className="px-2 py-1 text-xs bg-gray-600 rounded text-white"
+                onClick={() => {
+                  setEditingEvent(false);
+                  setEventType(caption.eventType || caption.event || "Fight");
+                  setDescription(caption.description || caption.desc || "");
+                }}
+              >
+                Cancel
+              </button>
+
+              <button
+                className="px-2 py-1 text-xs bg-green-600 rounded text-white"
+                onClick={saveEventEdits}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   const bgColor = LABEL_COLORS[label] || LABEL_COLORS["None"];
 
   return (
-    <div ref={cardRef} className={`border p-2 mb-2 rounded transition-colors ${bgColor}`}>
+    <div
+      ref={cardRef}
+      className={`border p-2 mb-2 rounded transition-colors ${bgColor}`}
+    >
       <div className="flex justify-between items-center">
         <p
-          onClick={handleTimeClick}
+          onClick={handleSeek}
           className="text-sm text-blue-600 cursor-pointer font-medium hover:underline"
         >
           {Number(caption.start).toFixed(1)}s →{" "}
           {Number(caption.start + caption.duration).toFixed(1)}s
         </p>
+
         <button
-          onClick={handleCopyPrevious}
+          onClick={() => {
+            const prev = onCopyPrevious?.(caption.id);
+            if (prev) {
+              setLabel(prev.label);
+              setCustomLabel(prev.customLabel || "");
+            }
+          }}
           className="text-xs bg-gray-200 hover:bg-gray-300 px-2 py-1 rounded"
         >
           Same as Previous
@@ -87,26 +190,22 @@ export default function AnnotationCard({ caption, onChange, onSeek, onCopyPrevio
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
-        className="w-full border p-1 my-1 rounded bg-white"
+        className="w-full border p-1 my-1 rounded bg-white font-mono text-xs"
       />
 
       <select
         value={label}
-        onChange={handleLabelChange}
+        onChange={(e) => {
+          setLabel(e.target.value);
+          if (e.target.value !== "Custom") setCustomLabel("");
+        }}
         className="w-full border p-1 my-1 rounded"
       >
-        <option value="None">No Label</option>
-        <option value="Play by Play">Play by Play</option>
-        <option value="Storytelling">Storytelling</option>
-        <option value="Game Analysis">Game Analysis</option>
-        <option value="Meta Analysis">Meta Analysis</option>
-        <option value="Hype">Hype</option>
-        <option value="Jokes / Humor">Jokes / Humor</option>
-        <option value="Personal">Personal</option>
-        <option value="Audience Interaction">Audience Interaction</option>
-        <option value="Replay">Replay</option>
-        <option value="Technical / Filler">Technical / Filler</option>
-        <option value="Custom">Custom...</option>
+        {Object.keys(LABEL_COLORS).map((lbl) => (
+          <option key={lbl} value={lbl}>
+            {lbl}
+          </option>
+        ))}
       </select>
 
       {label === "Custom" && (

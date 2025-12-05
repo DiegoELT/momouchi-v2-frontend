@@ -1,33 +1,60 @@
+// src/components/CCList.jsx
 import AnnotationCard from "./AnnotationCard";
 
-export default function CCList({ captions, onSeek, onUpdate }) {
-  const handleChange = (updatedCaption) => {
-    onUpdate(updatedCaption);
+export default function CCList({
+  captions = [],
+  events = [],
+  onSeek,
+  onUpdate,
+  onDeleteEvent,
+}) {
+  const handleChange = (updatedItem) => {
+    // bubble up: parent will decide whether it's a caption or an event based on fields
+    onUpdate && onUpdate(updatedItem);
   };
 
-  // Helper for “Same as Previous” button
-  const handleCopyPrevious = (currentId) => {
-    const idx = captions.findIndex((cap) => cap.id === currentId);
-    if (idx > 0) {
-      const prev = captions[idx - 1];
-      return { label: prev.label, customLabel: prev.customLabel };
-    }
-    return null;
+  const handleDelete = (id) => {
+    onDeleteEvent && onDeleteEvent(id);
   };
 
-  if (!captions.length) return <p>No captions loaded.</p>;
+  // Merge and sort by time (captions use `start`, events use `time`)
+  const timelineItems = [...captions, ...events].sort((a, b) => {
+    const tA = a.start ?? a.time ?? 0;
+    const tB = b.start ?? b.time ?? 0;
+    return tA - tB;
+  });
+
+  if (!timelineItems.length) return <p>No captions or events loaded.</p>;
 
   return (
-    <div key={captions.length} className="space-y-2">
-      {captions.map((cap, idx) => (
-        <AnnotationCard
-          key={cap.id || `${idx}-${cap.start}-${cap.text?.slice(0, 5)}`}
-          caption={{ ...cap, id: cap.id || idx }}
-          onSeek={onSeek}
-          onChange={handleChange}
-          onCopyPrevious={handleCopyPrevious}
-        />
-      ))}
+    <div className="space-y-2">
+      {timelineItems.map((item, idx) => {
+        const isEvent = item.time !== undefined && item.time !== null;
+
+        // Normalize props: for a caption we pass it as-is, for an event we also keep `time`
+        return (
+          <AnnotationCard
+            key={item.id ?? `${isEvent ? "evt" : "cap"}-${idx}-${item.start ?? item.time}`}
+            caption={{ ...item, id: item.id ?? idx }}
+            isEvent={isEvent}
+            onSeek={onSeek}
+            onChange={handleChange}
+            onCopyPrevious={
+              // copy previous label is only useful for captions
+              (id) => {
+                if (!id) return null;
+                const idxInCaptions = captions.findIndex((c) => c.id === id);
+                if (idxInCaptions > 0) {
+                  const prev = captions[idxInCaptions - 1];
+                  return { label: prev.label, customLabel: prev.customLabel };
+                }
+                return null;
+              }
+            }
+            onDelete={isEvent ? handleDelete : undefined}
+          />
+        );
+      })}
     </div>
   );
 }

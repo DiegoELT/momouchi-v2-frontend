@@ -4,6 +4,7 @@ import VideoPlayer from "./components/VideoPlayer";
 import CCList from "./components/CCList";
 import MatchInfo from "./components/MatchInfo";
 import { parseTimeInput, formatTime } from "./utils/time";
+import EventModal from "./components/EventModal";
 
 const BASE_URL = import.meta.env.VITE_BACKEND_URL;
 
@@ -13,6 +14,9 @@ export default function App() {
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
   const [matchInfo, setMatchInfo] = useState(null); 
+  const [currentTime, setCurrentTime] = useState(0);
+  const [events, setEvents] = useState([]);
+  const [showEventModal, setShowEventModal] = useState(false);
 
   const playerRef = useRef(null);
 
@@ -64,14 +68,24 @@ export default function App() {
     }
   };
 
-  const handleCaptionUpdate = (updatedCaption) => {
-    setCaptions((prev) =>
-      prev.map((c) => (c.start === updatedCaption.start ? updatedCaption : c))
-    );
+  const handleUpdateItem = (updated) => {
+    // event items will have `time`; captions have `start`
+    if (updated.time !== undefined) {
+      // update event
+      setEvents((prev) =>
+        prev.map((e) => (e.id === updated.id ? { ...e, ...updated } : e))
+      );
+    } else if (updated.start !== undefined) {
+      setCaptions((prev) => prev.map((c) => (c.start === updated.start ? { ...c, ...updated } : c)));
+    }
+  };
+
+  const handleDeleteEvent = (id) => {
+    setEvents((prev) => prev.filter((e) => e.id !== id));
   };
 
   const saveAnnotations = () => {
-    const data = { video_url: url, captions, matchInfo };
+    const data = { video_url: url, captions, matchInfo, events };
     const blob = new Blob([JSON.stringify(data, null, 2)], {
       type: "application/json",
     });
@@ -100,7 +114,9 @@ export default function App() {
         } else {
           alert("Invalid file format: captions missing.");
         }
-
+        if (Array.isArray(data.events)) {
+          setEvents(data.events);
+        }
         if (data.matchInfo) {
           setMatchInfo(data.matchInfo);
         }
@@ -166,7 +182,14 @@ export default function App() {
         <div className="w-full flex justify-center">
           {url ? (
             <div className="w-full max-w-3xl h-[405px]">
-              <VideoPlayer ref={playerRef} url={url} controls width="100%" height="100%" />
+              <VideoPlayer
+                ref={playerRef}
+                url={url}
+                onProgress={setCurrentTime}  // <-- this will update currentTime every 0.5s while playing
+                controls
+                width="100%"
+                height="100%"
+              />
             </div>
           ) : (
             <div className="border-2 border-dashed w-[720px] h-[405px] flex items-center justify-center text-gray-400">
@@ -174,6 +197,31 @@ export default function App() {
             </div>
           )}
         </div>
+
+        {captions.length > 0 && (
+          <div className="mt-4">
+            <button
+              className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
+              onClick={() => setShowEventModal(true)}
+            >
+              Add Timestamp
+            </button>
+          </div>
+        )}
+
+
+        <EventModal
+          isOpen={showEventModal}
+          onClose={() => setShowEventModal(false)}
+          currentTime={currentTime}             // current video timestamp
+          onSave={(newEvent) => {
+            setEvents((prevEvents) => {
+              const updated = [...prevEvents, newEvent];
+              updated.sort((a, b) => a.time - b.time); // keep sorted by timestamp
+              return updated;
+            });
+          }}
+        />
 
         {/* Match Info */}
         <MatchInfo matches={matchInfo} />
@@ -184,11 +232,13 @@ export default function App() {
         <div className="flex-1 overflow-y-auto p-4">
           <h2 className="text-xl font-semibold mb-2">Annotations</h2>
           <CCList
-            key={captions.length + url}
             captions={captions}
+            events={events}
             onSeek={handleSeek}
-            onUpdate={handleCaptionUpdate}
+            onUpdate={handleUpdateItem}
+            onDeleteEvent={handleDeleteEvent}
           />
+
         </div>
 
         {/* Fixed Bottom Controls */}
