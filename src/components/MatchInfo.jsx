@@ -40,8 +40,12 @@ export default function MatchInfo({ matches }) {
               )}
             </p>
 
-            <p className="text-xs text-blue-600 mb-4">
+            <p className="text-xs text-gray-600 mb-2">
               Overview page: {m.overviewpage || "-"}
+            </p>
+
+            <p className="text-xs text-gray-600 mb-4">
+              Game ID: {m.gameid || "-"}
             </p>
 
             <p className="font-semibold text-lg mb-2">

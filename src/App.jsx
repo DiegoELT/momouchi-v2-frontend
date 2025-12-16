@@ -91,7 +91,7 @@ export default function App() {
     });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = "annotations.json";
+    link.download = matchInfo.gameid ? `${matchInfo.gameid}.json` : "annotations.json";
     link.click();
   };
 
