@@ -18,6 +18,66 @@ export default function App() {
   const [events, setEvents] = useState([]);
   const [showEventModal, setShowEventModal] = useState(false);
 
+  const QUICK_OBJECTIVES = [
+    { label: "T", value: "Tower" }, // UI says Turret, stored value matches modal
+    { label: "D", value: "Dragon" },
+    { label: "G", value: "Grubs" },
+    { label: "H", value: "Herald" },
+    { label: "B", value: "Baron" },
+  ];
+
+
+  const getTeamLabel = (value, fallback) => {
+    if (typeof value === "string") return value;
+    if (value && typeof value === "object") {
+      return value.team_name || value.name || fallback;
+    }
+    return fallback;
+  };
+
+  const getTeamNameBySide = (side) => {
+    const m = Array.isArray(matchInfo) ? matchInfo[0] : matchInfo;
+    if (!m) return side === "left" ? "Blue Team" : "Red Team";
+
+    if (side === "left") {
+      const rawLeft =
+        m.blue_team ??
+        m.blueTeam ??
+        m.team1_name ??
+        m.team1;
+
+      return getTeamLabel(rawLeft, "Blue Team");
+    }
+
+    const rawRight =
+      m.red_team ??
+      m.redTeam ??
+      m.team2_name ??
+      m.team2;
+
+    return getTeamLabel(rawRight, "Red Team");
+  };
+
+  const addQuickEvent = (side, objectiveValue) => {
+    const team = getTeamNameBySide(side);
+
+    const newEvent = {
+      id: crypto.randomUUID(),
+      time: Number(currentTime.toFixed(2)),
+      type: "OBJECTIVE",        // match EventModal
+      objective: objectiveValue, // match EventModal
+      team,                      // match EventModal
+      description: "",           // optional, same shape
+      side: side === "left" ? "blue" : "red",
+    };
+
+    setEvents((prevEvents) => {
+      const updated = [...prevEvents, newEvent];
+      updated.sort((a, b) => a.time - b.time);
+      return updated;
+    });
+  };
+
   const playerRef = useRef(null);
 
   const fetchMatchInfo = async (videoUrl) => {
@@ -211,13 +271,42 @@ export default function App() {
         </div>
 
         {captions.length > 0 && (
-          <div className="mt-4">
+          <div className="mt-4 flex items-center gap-2">
+            {/* Left side (blue team) */}
+            <div className="flex items-center gap-1">
+              {QUICK_OBJECTIVES.map((obj) => (
+                <button
+                  key={`left-${obj.label}`}
+                  onClick={() => addQuickEvent("left", obj.value)}
+                  className="w-10 h-10 rounded bg-blue-500 text-white text-[10px] font-semibold hover:bg-blue-600"
+                  title={`Add ${obj.label} for left/blue team`}
+                >
+                  {obj.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Existing modal button */}
             <button
-              className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
+              className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 whitespace-nowrap"
               onClick={() => setShowEventModal(true)}
             >
               Add Timestamp
             </button>
+
+            {/* Right side (red team) */}
+            <div className="flex items-center gap-1">
+              {QUICK_OBJECTIVES.map((obj) => (
+                <button
+                  key={`right-${obj.label}`}
+                  onClick={() => addQuickEvent("right", obj.value)}
+                  className="w-10 h-10 rounded bg-red-500 text-white text-[10px] font-semibold hover:bg-red-600"
+                  title={`Add ${obj.label} for right/red team`}
+                >
+                  {obj.label}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
