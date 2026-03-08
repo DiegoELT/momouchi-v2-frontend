@@ -3,6 +3,7 @@ import { useEffect, useState, useRef } from "react";
 const LABEL_COLORS = {
   "Play-by-Play": "bg-blue-100",
   "Strategic Analysis": "bg-green-100",
+  "Contextual Info": "bg-lime-100",
   "Storytelling": "bg-pink-100",
   "Hype": "bg-yellow-100",
   "Recap": "bg-purple-100",
