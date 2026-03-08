@@ -33,13 +33,20 @@ export default function App() {
     }
   };
 
+  function normalizeCaptions(rawCaptions) {
+    return rawCaptions.map((cap) => ({
+      ...cap,
+      id: cap.id ?? crypto.randomUUID(),
+    }));
+  }
+
   const handleFetch = async () => {
     try {
       const res = await axios.get(`${BASE_URL}/captions/`, {
         params: { video_url: url },
       });
       if (res.data.captions) {
-        let loadedCaptions = res.data.captions;
+        let loadedCaptions = normalizeCaptions(res.data.captions);
 
         // ⏱️ If start/end range is specified, filter captions
         if (startTime || endTime) {
@@ -109,7 +116,12 @@ export default function App() {
         }
 
         if (Array.isArray(data.captions)) {
-          setCaptions(data.captions);
+          setCaptions(
+            data.captions.map((c) => ({
+              ...c,
+              id: c.id ?? crypto.randomUUID(),
+            }))
+          );
           alert(`Loaded ${data.captions.length} annotations.`);
         } else {
           alert("Invalid file format: captions missing.");
@@ -214,6 +226,7 @@ export default function App() {
           isOpen={showEventModal}
           onClose={() => setShowEventModal(false)}
           currentTime={currentTime}             // current video timestamp
+          matchInfo={matchInfo}
           onSave={(newEvent) => {
             setEvents((prevEvents) => {
               const updated = [...prevEvents, newEvent];
