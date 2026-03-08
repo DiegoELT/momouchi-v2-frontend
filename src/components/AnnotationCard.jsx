@@ -5,8 +5,7 @@ const LABEL_COLORS = {
   "Strategic Analysis": "bg-green-100",
   "Storytelling": "bg-pink-100",
   "Hype": "bg-yellow-100",
-  "Jokes / Personal": "bg-teal-100",
-  "Replay": "bg-red-100",
+  "Recap": "bg-purple-100",
   // "Custom": "bg-purple-100", Enable for future research.
   "None": "bg-gray-50",
 };
