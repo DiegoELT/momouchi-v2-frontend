@@ -9,7 +9,7 @@ const LABEL_COLORS = {
   "Recap": "bg-purple-100",
   // "Contextual Info": Was removed because of similarity to Strategic Analysis.
   // "Custom": "bg-purple-100", Enable for future research.
-  "None": "bg-gray-50",
+  None: "bg-gray-50",
 };
 
 function formatTime(seconds) {
@@ -35,7 +35,7 @@ export default function AnnotationCard({
   // Sync when caption prop changes
   useEffect(() => {
     setText(caption.text ?? "");
-    setLabel(caption.label === "Custom" ? "None" : (caption.label || "None")); // normalize old Custom values
+    setLabel(caption.label === "Custom" ? "None" : caption.label || "None"); // normalize old Custom values
     setCustomLabel(caption.customLabel || "");
     setComment(caption.comment || "");
   }, [caption]);
@@ -59,11 +59,52 @@ export default function AnnotationCard({
     onSeek?.(caption.start);
   };
 
-  const bgColor = LABEL_COLORS[label] || LABEL_COLORS["None"];
+  const bgColor = LABEL_COLORS[label] || LABEL_COLORS.None;
+
+  const copyPreviousLabel = ({ focusNext = false } = {}) => {
+    const prev = onCopyPrevious?.(caption.id);
+    if (prev) {
+      setLabel(prev.label === "Custom" ? "None" : prev.label);
+      setCustomLabel("");
+    }
+
+    if (!focusNext) return;
+
+    const cards = Array.from(
+      document.querySelectorAll('[data-annotation-card="true"]')
+    );
+    const currentIndex = cards.findIndex(
+      (el) => el.getAttribute("data-caption-id") === String(caption.id)
+    );
+    const nextCard = cards[currentIndex + 1];
+
+    if (nextCard) {
+      nextCard.focus();
+      nextCard.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  };
 
   return (
     <div
       ref={cardRef}
+      tabIndex={0}
+      data-annotation-card="true"
+      data-caption-id={String(caption.id)}
+      onKeyDown={(e) => {
+        const tag = e.target.tagName;
+        const isTypingField =
+          tag === "TEXTAREA" ||
+          tag === "INPUT" ||
+          tag === "SELECT" ||
+          e.target.isContentEditable;
+
+        if (isTypingField) return;
+
+        if ((e.key === "p" || e.key === "P") && !e.repeat) {
+          e.preventDefault();
+          copyPreviousLabel({ focusNext: true });
+        }
+      }}
       className={`border p-2 mb-2 rounded transition-colors ${bgColor}`}
     >
       {/* Time + actions */}
@@ -77,13 +118,7 @@ export default function AnnotationCard({
         </p>
 
         <button
-          onClick={() => {
-            const prev = onCopyPrevious?.(caption.id);
-            if (prev) {
-              setLabel(prev.label === "Custom" ? "None" : prev.label); // avoid restoring Custom
-              setCustomLabel(""); // keep cleared while Custom is disabled
-            }
-          }}
+          onClick={() => copyPreviousLabel()}
           className="text-xs bg-gray-200 hover:bg-gray-300 px-2 py-1 rounded"
         >
           Same as Previous
