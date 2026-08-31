@@ -1,16 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-
-const LABEL_COLORS = {
-  "Play-by-Play": "bg-blue-100",
-  "Strategic Analysis": "bg-green-100",
-  "Banter": "bg-cyan-100",
-  "Storytelling": "bg-pink-100",
-  "Hype": "bg-yellow-100",
-  "Recap": "bg-purple-100",
-  // "Contextual Info": Was removed because of similarity to Strategic Analysis.
-  // "Custom": "bg-purple-100", Enable for future research.
-  None: "bg-gray-50",
-};
+import { LABEL_COLORS, LABELS, FLAGS } from "../constants/annotation";
 
 function formatTime(seconds) {
   const m = Math.floor(seconds / 60);
@@ -31,6 +20,8 @@ export default function AnnotationCard({
   const [label, setLabel] = useState(caption.label || "None");
   const [customLabel, setCustomLabel] = useState(caption.customLabel || "");
   const [comment, setComment] = useState(caption.comment || "");
+  // Flag is independent of the label: at most one, may be null.
+  const [flag, setFlag] = useState(caption.flag ?? null);
 
   // Sync when caption prop changes
   useEffect(() => {
@@ -38,6 +29,7 @@ export default function AnnotationCard({
     setLabel(caption.label === "Custom" ? "None" : caption.label || "None"); // normalize old Custom values
     setCustomLabel(caption.customLabel || "");
     setComment(caption.comment || "");
+    setFlag(caption.flag ?? null);
   }, [caption]);
 
   // Auto-save caption edits
@@ -48,8 +40,9 @@ export default function AnnotationCard({
       label,
       customLabel,
       comment,
+      flag,
     });
-  }, [text, label, customLabel, comment]); // eslint-disable-line
+  }, [text, label, customLabel, comment, flag]); // eslint-disable-line
 
   const handleSeek = () => {
     cardRef.current?.scrollIntoView({
@@ -60,6 +53,11 @@ export default function AnnotationCard({
   };
 
   const bgColor = LABEL_COLORS[label] || LABEL_COLORS.None;
+
+  const toggleFlag = (value) => {
+    // Clicking the active flag clears it — enforces "at most one flag per segment".
+    setFlag((prev) => (prev === value ? null : value));
+  };
 
   const copyPreviousLabel = ({ focusNext = false } = {}) => {
     const prev = onCopyPrevious?.(caption.id);
@@ -105,7 +103,9 @@ export default function AnnotationCard({
           copyPreviousLabel({ focusNext: true });
         }
       }}
-      className={`border p-2 mb-2 rounded transition-colors ${bgColor}`}
+      className={`border p-2 mb-2 rounded transition-colors ${bgColor} ${
+        flag ? "ring-2 ring-amber-500" : ""
+      }`}
     >
       {/* Time + actions */}
       <div className="flex justify-between items-center">
@@ -117,12 +117,22 @@ export default function AnnotationCard({
           {formatTime(caption.start + caption.duration)}
         </p>
 
-        <button
-          onClick={() => copyPreviousLabel()}
-          className="text-xs bg-gray-200 hover:bg-gray-300 px-2 py-1 rounded"
-        >
-          Same as Previous
-        </button>
+        <div className="flex items-center gap-2">
+          {caption.guideline_version && (
+            <span
+              className="text-[10px] text-gray-500"
+              title="Guideline version this annotation was made under"
+            >
+              v{caption.guideline_version}
+            </span>
+          )}
+          <button
+            onClick={() => copyPreviousLabel()}
+            className="text-xs bg-gray-200 hover:bg-gray-300 px-2 py-1 rounded"
+          >
+            Same as Previous
+          </button>
+        </div>
       </div>
 
       {/* Caption text */}
@@ -141,12 +151,47 @@ export default function AnnotationCard({
         }}
         className="w-full border p-1 my-1 rounded"
       >
-        {Object.keys(LABEL_COLORS).map((lbl) => (
+        {LABELS.map((lbl) => (
           <option key={lbl} value={lbl}>
             {lbl}
           </option>
         ))}
       </select>
+
+      {/* Flag selector — independent of the label, at most one */}
+      <div className="flex items-center gap-1 my-1 flex-wrap">
+        <span className="text-[10px] uppercase tracking-wide text-gray-500 mr-1">
+          Flag
+        </span>
+        {FLAGS.map((f) => {
+          const active = flag === f.value;
+          return (
+            <button
+              key={f.value}
+              type="button"
+              onClick={() => toggleFlag(f.value)}
+              title={`${f.value} — ${f.title}`}
+              aria-pressed={active}
+              className={`text-[10px] font-semibold px-2 py-1 rounded border transition-colors ${
+                active
+                  ? "bg-amber-500 border-amber-600 text-white"
+                  : "bg-white/70 border-gray-300 text-gray-600 hover:bg-amber-100"
+              }`}
+            >
+              {f.short}
+            </button>
+          );
+        })}
+        {flag && (
+          <button
+            type="button"
+            onClick={() => setFlag(null)}
+            className="text-[10px] px-2 py-1 rounded text-gray-500 hover:text-gray-800 underline"
+          >
+            clear
+          </button>
+        )}
+      </div>
 
       {/* Custom label */}
       {/* {label === "Custom" && (

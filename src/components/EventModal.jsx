@@ -7,70 +7,45 @@ export default function EventModal({
   onClose,
   onSave,
   currentTime,
-  matchInfo // ← optional, pass null if unavailable
+  matchInfo, // ← optional, pass null if unavailable
 }) {
-  if (!isOpen) return null;
-
-  const hasPlayers =
-    matchInfo &&
-    matchInfo.team1?.players?.length &&
-    matchInfo.team2?.players?.length;
-
-  const allPlayers = hasPlayers
-    ? [
-        ...matchInfo.team1.players.map(p => ({
-          name: p.name,
-          team: "Blue"
-        })),
-        ...matchInfo.team2.players.map(p => ({
-          name: p.name,
-          team: "Red"
-        }))
-      ]
-    : [];
-
-  const allTeams = hasPlayers
-    ? [matchInfo.team1?.team_name, matchInfo.team2?.team_name]
-    : ["Blue", "Red"];
-
   const [eventCategory, setEventCategory] = useState("KILL");
-
-  // Kill fields
-  const [killer, setKiller] = useState("");
-  const [victim, setVictim] = useState("");
-  const [team, setTeam] = useState("Blue");
-
-  // Objective fields
+  const [team, setTeam] = useState("");
   const [objective, setObjective] = useState("Dragon");
   const [description, setDescription] = useState("");
 
-  function handleSubmit() { 
+  if (!isOpen) return null;
+
+  const match = Array.isArray(matchInfo) ? matchInfo[0] : matchInfo;
+
+  const team1Name = match?.team1?.team_name || "Blue";
+  const team2Name = match?.team2?.team_name || "Red";
+  const allTeams = [team1Name, team2Name];
+
+  const selectedTeam = team || allTeams[0];
+  const side = selectedTeam === allTeams[1] ? "red" : "blue";
+
+  function handleSubmit() {
     const base = {
       id: crypto.randomUUID(),
-      time: currentTime,
+      time: Number(Number(currentTime).toFixed(2)),
       type: eventCategory,
-      description
+      team: selectedTeam,
+      side,
+      description,
     };
 
+    // Kills are recorded at team level (one credited team), the same granularity
+    // as neutral objectives. Player-on-player detail is deliberately not logged.
     if (eventCategory === "KILL") {
-      onSave({
-        ...base,
-        killer: hasPlayers ? killer : team,
-        victim: hasPlayers ? victim : undefined,
-        team: hasPlayers
-          ? allPlayers.find(p => p.name === killer)?.team
-          : team
-      });
+      onSave(base);
     }
 
     if (eventCategory === "OBJECTIVE") {
-      onSave({
-        ...base,
-        objective,
-        team
-      });
+      onSave({ ...base, objective });
     }
 
+    setDescription("");
     onClose();
   }
 
@@ -92,88 +67,39 @@ export default function EventModal({
           </select>
         </label>
 
-        {/* Kill Event */}
-        {eventCategory === "KILL" && (
-          <>
-            {hasPlayers ? (
-              <>
-                <label className="block mb-2">
-                  <span className="text-sm">Killer</span>
-                  <select
-                    className="border p-2 w-full rounded mt-1"
-                    value={killer}
-                    onChange={(e) => setKiller(e.target.value)}
-                  >
-                    <option value="">Select player</option>
-                    {allPlayers.map(p => (
-                      <option key={p.name} value={p.name}>
-                        {p.name} ({p.team})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="block mb-2">
-                  <span className="text-sm">Victim</span>
-                  <select
-                    className="border p-2 w-full rounded mt-1"
-                    value={victim}
-                    onChange={(e) => setVictim(e.target.value)}
-                  >
-                    <option value="">Select player</option>
-                    {allPlayers.map(p => (
-                      <option key={p.name} value={p.name}>
-                        {p.name} ({p.team})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </>
-            ) : (
-              <label className="block mb-2">
-                <span className="text-sm">Team</span>
-                <select
-                  className="border p-2 w-full rounded mt-1"
-                  value={team}
-                  onChange={(e) => setTeam(e.target.value)}
-                >
-                  <option>{allTeams[0]}</option>
-                  <option>{allTeams[1]}</option>
-                </select>
-              </label>
-            )}
-          </>
-        )}
-
-        {/* Objective Event */}
+        {/* Objective picker (objectives only) */}
         {eventCategory === "OBJECTIVE" && (
-          <>
-            <label className="block mb-2">
-              <span className="text-sm">Objective</span>
-              <select
-                className="border p-2 w-full rounded mt-1"
-                value={objective}
-                onChange={(e) => setObjective(e.target.value)}
-              >
-                {OBJECTIVES.map(o => (
-                  <option key={o}>{o}</option>
-                ))}
-              </select>
-            </label>
-
-            <label className="block mb-2">
-              <span className="text-sm">Team</span>
-              <select
-                className="border p-2 w-full rounded mt-1"
-                value={team}
-                onChange={(e) => setTeam(e.target.value)}
-              >
-                <option>{allTeams[0]}</option>
-                <option>{allTeams[1]}</option>
-              </select>
-            </label>
-          </>
+          <label className="block mb-2">
+            <span className="text-sm">Objective</span>
+            <select
+              className="border p-2 w-full rounded mt-1"
+              value={objective}
+              onChange={(e) => setObjective(e.target.value)}
+            >
+              {OBJECTIVES.map((o) => (
+                <option key={o}>{o}</option>
+              ))}
+            </select>
+          </label>
         )}
+
+        {/* Team — used by both kills and objectives */}
+        <label className="block mb-2">
+          <span className="text-sm">
+            {eventCategory === "KILL" ? "Team that got the kill" : "Team"}
+          </span>
+          <select
+            className="border p-2 w-full rounded mt-1"
+            value={selectedTeam}
+            onChange={(e) => setTeam(e.target.value)}
+          >
+            {allTeams.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+        </label>
 
         {/* Description */}
         <label className="block mb-3">

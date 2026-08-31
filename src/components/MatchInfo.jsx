@@ -8,7 +8,7 @@ function sortByRole(players) {
   );
 }
 
-export default function MatchInfo({ matches }) {
+export default function MatchInfo({ matches, onPatchChange }) {
   const list = matches == null ? [] : Array.isArray(matches) ? matches : [matches];
   if (list.length === 0) return null;
 
@@ -44,9 +44,38 @@ export default function MatchInfo({ matches }) {
               Overview page: {m.overviewpage || "-"}
             </p>
 
-            <p className="text-xs text-gray-600 mb-4">
+            <p className="text-xs text-gray-600 mb-2">
               Game ID: {m.gameid || "-"}
             </p>
+
+            {/* Patch — pulled from Leaguepedia, editable in case it is missing
+                or the VOD does not match the recorded patch. */}
+            <div className="flex items-center gap-2 mb-4">
+              <label
+                htmlFor={`patch-${idx}`}
+                className="text-xs text-gray-600 whitespace-nowrap"
+              >
+                Patch:
+              </label>
+              {idx === 0 && onPatchChange ? (
+                <input
+                  id={`patch-${idx}`}
+                  type="text"
+                  value={m.patch ?? ""}
+                  placeholder="e.g. 15.13"
+                  onChange={(e) => onPatchChange(e.target.value)}
+                  className="border px-2 py-1 rounded text-xs w-28"
+                />
+              ) : (
+                <span className="text-xs font-semibold">{m.patch || "-"}</span>
+              )}
+              {m.datetime_utc && (
+                <span className="text-xs text-gray-500">
+                  ({m.datetime_utc} UTC
+                  {m.gamelength ? `, ${m.gamelength}` : ""})
+                </span>
+              )}
+            </div>
 
             <p className="font-semibold text-lg mb-2">
               Scoreboard

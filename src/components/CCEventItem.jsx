@@ -1,17 +1,13 @@
-export const COLOR_MAP = {
-  Dragon: "bg-orange-300",
-  Tower: "bg-blue-300",
-  Grubs: "bg-purple-200",
-  Herald: "bg-purple-300",
-  Baron: "bg-purple-400",
-  Fight: "bg-red-300",
+// Side is the authoritative colour key (blue/red). Team name is kept as a
+// fallback for events logged before `side` was recorded.
+const SIDE_COLORS = {
+  blue: "bg-blue-100 border-blue-400 text-blue-900",
+  red: "bg-red-100 border-red-400 text-red-900",
 };
 
-// fallback if eventType doesn't match
-const DEFAULT_COLOR = "bg-gray-800 border-gray-700 text-gray-300";
 const TEAM_COLORS = {
-  Blue: "bg-blue-100 border-blue-400 text-blue-900",
-  Red: "bg-red-100 border-red-400 text-red-900",
+  Blue: SIDE_COLORS.blue,
+  Red: SIDE_COLORS.red,
 };
 
 const NEUTRAL = "bg-gray-100 border-gray-400 text-gray-900";
@@ -23,33 +19,32 @@ function formatTime(sec) {
 }
 
 export default function CCEventItem({ event, onEdit, onDelete }) {
-  const colorClass = TEAM_COLORS[event.team] || NEUTRAL;
+  const colorClass =
+    SIDE_COLORS[event.side] || TEAM_COLORS[event.team] || NEUTRAL;
 
   function renderTitle() {
     if (event.type === "KILL") {
+      // Legacy events logged at player level still render as before.
       if (event.killer && event.victim) {
         return (
           <>
-            <span className="font-semibold">{event.killer}</span>
-            {" "}slays{" "}
+            <span className="font-semibold">{event.killer}</span> slays{" "}
             <span className="font-semibold">{event.victim}</span>
           </>
         );
       }
 
-      // fallback if players unknown
       return (
-        <span className="font-semibold">
-          {event.team} Team Kill
-        </span>
+        <>
+          <span className="font-semibold">{event.team}</span> gets a kill
+        </>
       );
     }
 
     if (event.type === "OBJECTIVE") {
       return (
         <>
-          <span className="font-semibold">{event.team}</span>
-          {" "}secures{" "}
+          <span className="font-semibold">{event.team}</span> secures{" "}
           <span className="font-semibold">{event.objective}</span>
         </>
       );
@@ -70,19 +65,19 @@ export default function CCEventItem({ event, onEdit, onDelete }) {
           </div>
 
           {event.description && (
-            <div className="text-xs mt-1 opacity-80">
-              {event.description}
-            </div>
+            <div className="text-xs mt-1 opacity-80">{event.description}</div>
           )}
         </div>
 
         <div className="flex gap-1 shrink-0">
-          <button
-            className="px-2 py-1 text-xs bg-white/60 rounded"
-            onClick={() => onEdit(event)}
-          >
-            Edit
-          </button>
+          {onEdit && (
+            <button
+              className="px-2 py-1 text-xs bg-white/60 rounded"
+              onClick={() => onEdit(event)}
+            >
+              Edit
+            </button>
+          )}
           <button
             className="px-2 py-1 text-xs bg-red-600 text-white rounded"
             onClick={() => onDelete(event.id)}

@@ -3,8 +3,12 @@ import axios from "axios";
 import VideoPlayer from "./components/VideoPlayer";
 import CCList from "./components/CCList";
 import MatchInfo from "./components/MatchInfo";
-import { parseTimeInput, formatTime } from "./utils/time";
+import { parseTimeInput } from "./utils/time";
 import EventModal from "./components/EventModal";
+import {
+  GUIDELINE_VERSIONS,
+  DEFAULT_GUIDELINE_VERSION,
+} from "./constants/annotation";
 
 const BASE_URL = import.meta.env.VITE_BACKEND_URL;
 
@@ -17,6 +21,10 @@ export default function App() {
   const [currentTime, setCurrentTime] = useState(0);
   const [events, setEvents] = useState([]);
   const [showEventModal, setShowEventModal] = useState(false);
+  // Guideline version every annotation made in this session is stamped with.
+  const [guidelineVersion, setGuidelineVersion] = useState(
+    DEFAULT_GUIDELINE_VERSION
+  );
 
   const QUICK_OBJECTIVES = [
     { label: "T", value: "Tower" }, // UI says Turret, stored value matches modal
@@ -58,17 +66,14 @@ export default function App() {
     return getTeamLabel(rawRight, "Red Team");
   };
 
-  const addQuickEvent = (side, objectiveValue) => {
-    const team = getTeamNameBySide(side);
-
+  const addTimelineEvent = (side, payload) => {
     const newEvent = {
       id: crypto.randomUUID(),
       time: Number(currentTime.toFixed(2)),
-      type: "OBJECTIVE",        // match EventModal
-      objective: objectiveValue, // match EventModal
-      team,                      // match EventModal
-      description: "",           // optional, same shape
+      team: getTeamNameBySide(side), // match EventModal
       side: side === "left" ? "blue" : "red",
+      description: "", // optional, same shape
+      ...payload,
     };
 
     setEvents((prevEvents) => {
@@ -77,6 +82,13 @@ export default function App() {
       return updated;
     });
   };
+
+  const addQuickEvent = (side, objectiveValue) =>
+    addTimelineEvent(side, { type: "OBJECTIVE", objective: objectiveValue });
+
+  // Kills are logged at team level (one button per team), the same granularity
+  // as neutral objectives — no killer/victim pair.
+  const addQuickKill = (side) => addTimelineEvent(side, { type: "KILL" });
 
   const playerRef = useRef(null);
 
@@ -143,7 +155,32 @@ export default function App() {
         prev.map((e) => (e.id === updated.id ? { ...e, ...updated } : e))
       );
     } else if (updated.start !== undefined) {
-      setCaptions((prev) => prev.map((c) => (c.start === updated.start ? { ...c, ...updated } : c)));
+      setCaptions((prev) =>
+        prev.map((c) => {
+          if (String(c.id) !== String(updated.id)) return c;
+
+          const merged = { ...c, ...updated };
+
+          // Stamp the guideline version whenever the annotation itself changes
+          // (label or flag) — not on text/comment edits. Segments annotated
+          // under an older version keep their original stamp.
+          const labelChanged =
+            (updated.label ?? "None") !== (c.label ?? "None");
+          const flagChanged = (updated.flag ?? null) !== (c.flag ?? null);
+
+          if (labelChanged || flagChanged) {
+            const isAnnotated =
+              (merged.label ?? "None") !== "None" || Boolean(merged.flag);
+            if (isAnnotated) {
+              merged.guideline_version = guidelineVersion;
+            } else {
+              delete merged.guideline_version;
+            }
+          }
+
+          return merged;
+        })
+      );
     }
   };
 
@@ -152,13 +189,20 @@ export default function App() {
   };
 
   const saveAnnotations = () => {
-    const data = { video_url: url, captions, matchInfo, events };
+    const data = {
+      video_url: url,
+      guideline_version: guidelineVersion,
+      captions,
+      matchInfo,
+      events,
+    };
     const blob = new Blob([JSON.stringify(data, null, 2)], {
       type: "application/json",
     });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = matchInfo.gameid ? `${matchInfo.gameid}.json` : "annotations.json";
+    const match = Array.isArray(matchInfo) ? matchInfo[0] : matchInfo;
+    link.download = match?.gameid ? `${match.gameid}.json` : "annotations.json";
     link.click();
   };
 
@@ -173,6 +217,13 @@ export default function App() {
 
         if (data.video_url) {
           setUrl(data.video_url);
+        }
+
+        if (
+          data.guideline_version &&
+          GUIDELINE_VERSIONS.includes(data.guideline_version)
+        ) {
+          setGuidelineVersion(data.guideline_version);
         }
 
         if (Array.isArray(data.captions)) {
@@ -248,6 +299,29 @@ export default function App() {
               className="border p-2 w-1/3 rounded"
             />
           </div>
+
+          {/* Annotation guideline version — stamped onto every annotation */}
+          <div className="flex items-center gap-2 w-full justify-center">
+            <label
+              htmlFor="guideline-version"
+              className="text-sm text-gray-600 whitespace-nowrap"
+            >
+              Annotation guidelines
+            </label>
+            <select
+              id="guideline-version"
+              value={guidelineVersion}
+              onChange={(e) => setGuidelineVersion(e.target.value)}
+              title="Version recorded with every annotation made from now on"
+              className="border p-2 rounded"
+            >
+              {GUIDELINE_VERSIONS.map((v) => (
+                <option key={v} value={v}>
+                  v{v}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {/* Video Player */}
@@ -274,6 +348,13 @@ export default function App() {
           <div className="mt-4 flex items-center gap-2">
             {/* Left side (blue team) */}
             <div className="flex items-center gap-1">
+              <button
+                onClick={() => addQuickKill("left")}
+                className="w-10 h-10 rounded bg-blue-700 text-white text-[10px] font-semibold hover:bg-blue-800"
+                title={`Add a kill for ${getTeamNameBySide("left")}`}
+              >
+                K
+              </button>
               {QUICK_OBJECTIVES.map((obj) => (
                 <button
                   key={`left-${obj.label}`}
@@ -306,6 +387,13 @@ export default function App() {
                   {obj.label}
                 </button>
               ))}
+              <button
+                onClick={() => addQuickKill("right")}
+                className="w-10 h-10 rounded bg-red-700 text-white text-[10px] font-semibold hover:bg-red-800"
+                title={`Add a kill for ${getTeamNameBySide("right")}`}
+              >
+                K
+              </button>
             </div>
           </div>
         )}
@@ -326,7 +414,20 @@ export default function App() {
         />
 
         {/* Match Info */}
-        <MatchInfo matches={matchInfo} />
+        <MatchInfo
+          matches={matchInfo}
+          onPatchChange={(value) =>
+            setMatchInfo((prev) => {
+              if (!prev) return prev;
+              if (Array.isArray(prev)) {
+                if (!prev.length) return prev;
+                const [first, ...rest] = prev;
+                return [{ ...first, patch: value }, ...rest];
+              }
+              return { ...prev, patch: value };
+            })
+          }
+        />
       </div>
 
       {/* Right Sidebar */}
