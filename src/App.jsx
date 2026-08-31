@@ -1,10 +1,13 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import axios from "axios";
 import VideoPlayer from "./components/VideoPlayer";
 import CCList from "./components/CCList";
 import MatchInfo from "./components/MatchInfo";
 import { parseTimeInput } from "./utils/time";
 import EventModal from "./components/EventModal";
+import CorpusPicker from "./components/CorpusPicker";
+import ErrorBoundary from "./components/ErrorBoundary";
+import { extractYouTubeId } from "./utils/youtube";
 import {
   GUIDELINE_VERSIONS,
   DEFAULT_GUIDELINE_VERSION,
@@ -21,6 +24,14 @@ export default function App() {
   const [currentTime, setCurrentTime] = useState(0);
   const [events, setEvents] = useState([]);
   const [showEventModal, setShowEventModal] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  // Where the currently loaded captions came from: "corpus" (frozen snapshot)
+  // or "live" (an unsaved preview straight from YouTube).
+  const [captionSource, setCaptionSource] = useState(null);
+  const [ingestEnabled, setIngestEnabled] = useState(false);
+  const [ingestStatus, setIngestStatus] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [corpusVersion, setCorpusVersion] = useState(0);
   // Guideline version every annotation made in this session is stamped with.
   const [guidelineVersion, setGuidelineVersion] = useState(
     DEFAULT_GUIDELINE_VERSION
@@ -90,7 +101,28 @@ export default function App() {
   // as neutral objectives — no killer/victim pair.
   const addQuickKill = (side) => addTimelineEvent(side, { type: "KILL" });
 
+  // Recomputed every keystroke; null while the URL box holds a partial string.
+  const videoId = extractYouTubeId(url);
+
   const playerRef = useRef(null);
+
+  // Ingestion only runs on a local backend (YouTube blocks datacenter IPs and a
+  // hosted disk is ephemeral), so the button is hidden unless the backend says
+  // it is available.
+  useEffect(() => {
+    let cancelled = false;
+    axios
+      .get(`${BASE_URL}/health`)
+      .then((res) => {
+        if (!cancelled) setIngestEnabled(Boolean(res.data.ingest_enabled));
+      })
+      .catch(() => {
+        if (!cancelled) setIngestEnabled(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const fetchMatchInfo = async (videoUrl) => {
     try {
@@ -98,11 +130,27 @@ export default function App() {
         params: { video_url: videoUrl },
       });
       setMatchInfo(res.data.matches || []);
-      console.log(res.data);
     } catch (err) {
+      // Missing metadata is not fatal — the patch and teams can be filled in
+      // by hand — so this never blocks annotation.
       console.error("Failed to fetch match info:", err);
       setMatchInfo([]);
     }
+  };
+
+  // The backend returns a descriptive `error` for the cases that actually
+  // happen (game not ingested, YouTube blocking the host). Show it rather than
+  // a generic failure.
+  const describeError = (err) =>
+    err.response?.data?.error || err.message || "Unknown error.";
+
+  // Seconds → the "mm:ss" the range inputs expect; "" when unbounded.
+  const secondsToInput = (value) => {
+    if (value === null || value === undefined || value === "") return "";
+    const total = Math.round(Number(value));
+    const m = Math.floor(total / 60);
+    const sec = total % 60;
+    return `${m}:${String(sec).padStart(2, "0")}`;
   };
 
   function normalizeCaptions(rawCaptions) {
@@ -112,16 +160,29 @@ export default function App() {
     }));
   }
 
-  const handleFetch = async () => {
+  const handleFetch = async (targetUrl = url) => {
+    if (!targetUrl) return;
+    if (!extractYouTubeId(targetUrl)) {
+      setLoadError("That does not look like a YouTube URL.");
+      return;
+    }
+    setLoadError("");
     try {
       const res = await axios.get(`${BASE_URL}/captions/`, {
-        params: { video_url: url },
+        params: { video_url: targetUrl },
       });
       if (res.data.captions) {
         let loadedCaptions = normalizeCaptions(res.data.captions);
+        const source = res.data.source || null;
 
-        // ⏱️ If start/end range is specified, filter captions
-        if (startTime || endTime) {
+        if (source === "corpus") {
+          // Already trimmed server-side. Adopt the stored bounds so the inputs
+          // show what this snapshot actually covers.
+          setStartTime(secondsToInput(res.data.trim?.start));
+          setEndTime(secondsToInput(res.data.trim?.end));
+        } else if (startTime || endTime) {
+          // Live preview: apply the range locally so you can find the bounds
+          // before committing them to the corpus.
           const start = parseTimeInput(startTime) ?? 0;
           const end = parseTimeInput(endTime) ?? Number.MAX_SAFE_INTEGER;
 
@@ -131,14 +192,85 @@ export default function App() {
         }
 
         setCaptions(loadedCaptions);
-        fetchMatchInfo(url);
+        setCaptionSource(source);
+        setIngestStatus("");
+        fetchMatchInfo(targetUrl);
       } else {
-        alert("No captions found");
+        setLoadError("No captions found for this VOD.");
       }
     } catch (err) {
       console.error(err);
-      alert("Error fetching captions.");
+      setCaptionSource(null);
+      setLoadError(describeError(err));
     }
+  };
+
+  // "Add to corpus" — runs the same ingestion the CLI does, through the local
+  // backend, using the start/end you just dialled in on the player.
+  const addToCorpus = async ({ refresh = false } = {}) => {
+    if (!url) return;
+    setBusy(true);
+    setLoadError("");
+    setIngestStatus("Fetching captions from YouTube…");
+
+    const body = {
+      video_url: url,
+      start: parseTimeInput(startTime),
+      end: parseTimeInput(endTime),
+      refresh,
+    };
+
+    try {
+      const res = await axios.post(`${BASE_URL}/corpus/`, body);
+      const { trimmed_count: kept, caption_count: total, match_warning: warn } =
+        res.data;
+      setIngestStatus(
+        `Added to corpus — keeping ${kept} of ${total} caption blocks.` +
+          (warn ? ` (${warn})` : "")
+      );
+      setCorpusVersion((v) => v + 1);
+      await handleFetch(url); // reload from the snapshot so what you annotate is what was saved
+    } catch (err) {
+      console.error(err);
+      setIngestStatus("");
+      setLoadError(describeError(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Change the bounds of a game already in the corpus. Recomputed from the
+  // stored full captions — never re-fetches, so the text cannot change.
+  const retrimCorpus = async () => {
+    setBusy(true);
+    setLoadError("");
+    setIngestStatus("Re-trimming…");
+
+    try {
+      if (!videoId) throw new Error("Could not read a video id from the URL.");
+
+      const res = await axios.post(`${BASE_URL}/corpus/${videoId}/trim`, {
+        start: parseTimeInput(startTime),
+        end: parseTimeInput(endTime),
+      });
+      setIngestStatus(
+        `Re-trimmed — keeping ${res.data.trimmed_count} of ${res.data.caption_count} blocks.`
+      );
+      setCorpusVersion((v) => v + 1);
+      await handleFetch(url);
+    } catch (err) {
+      console.error(err);
+      setIngestStatus("");
+      setLoadError(describeError(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Picking a game from the corpus list loads it straight away.
+  const handleSelectGame = (videoUrl) => {
+    setUrl(videoUrl);
+    handleFetch(videoUrl);
   };
 
   const handleSeek = (time) => {
@@ -254,9 +386,12 @@ export default function App() {
   return (
     <div className="flex h-screen text-gray-800">
       {/* Left Sidebar */}
-      <div className="w-1/6 border-r p-4 bg-gray-50">
-        <h2 className="font-semibold mb-2">Left Sidebar</h2>
-        <p className="text-sm text-gray-500">Leaguepedia search (coming soon)</p>
+      <div className="w-1/6 border-r p-4 bg-gray-50 overflow-y-auto">
+        <CorpusPicker
+          activeVideoUrl={url}
+          onSelect={handleSelectGame}
+          refreshKey={corpusVersion}
+        />
       </div>
 
       {/* Middle Column */}
@@ -276,7 +411,7 @@ export default function App() {
               className="border p-2 flex-1 rounded"
             />
             <button
-              onClick={handleFetch}
+              onClick={() => handleFetch()}
               className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
             >
               Load
@@ -299,6 +434,57 @@ export default function App() {
               className="border p-2 w-1/3 rounded"
             />
           </div>
+
+          {ingestEnabled && (
+            <div className="flex flex-col items-center gap-2 w-full">
+              <div className="flex items-center gap-2 flex-wrap justify-center">
+                {captionSource === "live" && (
+                  <span className="text-xs px-2 py-1 rounded bg-amber-100 border border-amber-400 text-amber-900">
+                    Preview — not saved yet
+                  </span>
+                )}
+                {captionSource === "corpus" && (
+                  <span className="text-xs px-2 py-1 rounded bg-emerald-100 border border-emerald-400 text-emerald-900">
+                    In corpus
+                  </span>
+                )}
+
+                {captionSource === "live" && (
+                  <button
+                    onClick={() => addToCorpus()}
+                    disabled={busy || !videoId}
+                    className="bg-emerald-600 text-white px-4 py-2 rounded hover:bg-emerald-700 disabled:opacity-50"
+                    title="Fetch the full captions and save a snapshot with these start/end bounds"
+                  >
+                    {busy ? "Working…" : "Add to corpus"}
+                  </button>
+                )}
+
+                {captionSource === "corpus" && (
+                  <button
+                    onClick={retrimCorpus}
+                    disabled={busy}
+                    className="bg-amber-600 text-white px-4 py-2 rounded hover:bg-amber-700 disabled:opacity-50"
+                    title="Recompute the trim from the stored captions — does not re-fetch from YouTube"
+                  >
+                    {busy ? "Working…" : "Update trim"}
+                  </button>
+                )}
+              </div>
+
+              {ingestStatus && (
+                <p className="text-sm text-emerald-700 text-center break-words">
+                  {ingestStatus}
+                </p>
+              )}
+            </div>
+          )}
+
+          {loadError && (
+            <p className="text-sm text-red-600 text-center w-full break-words">
+              {loadError}
+            </p>
+          )}
 
           {/* Annotation guideline version — stamped onto every annotation */}
           <div className="flex items-center gap-2 w-full justify-center">
@@ -326,20 +512,22 @@ export default function App() {
 
         {/* Video Player */}
         <div className="w-full flex justify-center">
-          {url ? (
+          {videoId ? (
             <div className="w-full max-w-3xl h-[405px]">
-              <VideoPlayer
-                ref={playerRef}
-                url={url}
-                onProgress={setCurrentTime}  // <-- this will update currentTime every 0.5s while playing
-                controls
-                width="100%"
-                height="100%"
-              />
+              <ErrorBoundary label="The video player failed to load.">
+                <VideoPlayer
+                  ref={playerRef}
+                  url={url}
+                  onProgress={setCurrentTime}  // <-- this will update currentTime every 0.5s while playing
+                  controls
+                  width="100%"
+                  height="100%"
+                />
+              </ErrorBoundary>
             </div>
           ) : (
             <div className="border-2 border-dashed w-[720px] h-[405px] flex items-center justify-center text-gray-400">
-              Video will appear here
+              {url ? "Not a YouTube URL yet…" : "Video will appear here"}
             </div>
           )}
         </div>
@@ -434,13 +622,15 @@ export default function App() {
       <div className="w-1/3 border-l p-0 flex flex-col bg-white">
         <div className="flex-1 overflow-y-auto p-4">
           <h2 className="text-xl font-semibold mb-2">Annotations</h2>
-          <CCList
-            captions={captions}
-            events={events}
-            onSeek={handleSeek}
-            onUpdate={handleUpdateItem}
-            onDeleteEvent={handleDeleteEvent}
-          />
+          <ErrorBoundary label="The annotation list failed to render.">
+            <CCList
+              captions={captions}
+              events={events}
+              onSeek={handleSeek}
+              onUpdate={handleUpdateItem}
+              onDeleteEvent={handleDeleteEvent}
+            />
+          </ErrorBoundary>
 
         </div>
 

@@ -1,8 +1,8 @@
 import YouTube from "react-youtube";
 import { forwardRef, useEffect, useRef } from "react";
+import { extractYouTubeId } from "../utils/youtube";
 
 const VideoPlayer = forwardRef(({ url, onProgress }, ref) => {
-  const videoId = new URL(url).searchParams.get("v");
   const intervalRef = useRef(null);
 
   const onReady = (event) => {
@@ -36,6 +36,19 @@ const VideoPlayer = forwardRef(({ url, onProgress }, ref) => {
     };
   }, []);
 
+  // Parsed after the hooks so hook order stays stable, and defensively: this
+  // component re-renders on every keystroke in the URL box, where the value is
+  // a half-typed string most of the time.
+  const videoId = extractYouTubeId(url);
+
+  if (!videoId) {
+    return (
+      <div className="border-2 border-dashed w-full h-full flex items-center justify-center text-gray-400 text-sm">
+        Waiting for a valid YouTube URL…
+      </div>
+    );
+  }
+
   const opts = {
     height: "405",
     width: "720",
@@ -44,6 +57,7 @@ const VideoPlayer = forwardRef(({ url, onProgress }, ref) => {
 
   return (
     <YouTube
+      key={videoId}
       videoId={videoId}
       opts={opts}
       onReady={onReady}
@@ -51,5 +65,7 @@ const VideoPlayer = forwardRef(({ url, onProgress }, ref) => {
     />
   );
 });
+
+VideoPlayer.displayName = "VideoPlayer";
 
 export default VideoPlayer;
