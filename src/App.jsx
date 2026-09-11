@@ -32,6 +32,14 @@ export default function App() {
   const [ingestStatus, setIngestStatus] = useState("");
   const [busy, setBusy] = useState(false);
   const [corpusVersion, setCorpusVersion] = useState(0);
+  // Provenance of the loaded snapshot: which corpus entry, and the trim window
+  // the captions were served under. Recorded into the export so an annotation
+  // file always says what material it covers.
+  const [corpusMeta, setCorpusMeta] = useState(null);
+  // Trim carried by an annotation file that was loaded from disk, kept so it
+  // can be checked against the corpus.
+  const [fileTrim, setFileTrim] = useState(undefined);
+  const [trimWarning, setTrimWarning] = useState("");
   // Guideline version every annotation made in this session is stamped with.
   const [guidelineVersion, setGuidelineVersion] = useState(
     DEFAULT_GUIDELINE_VERSION
@@ -106,6 +114,26 @@ export default function App() {
 
   const playerRef = useRef(null);
 
+  // If an annotation file says it covers one window and the corpus now serves
+  // another, the segments underneath those labels have shifted. Silent drift
+  // here is the failure mode the stored-full-captions design exists to prevent,
+  // so surface it loudly rather than letting it pass.
+  useEffect(() => {
+    if (fileTrim === undefined || !corpusMeta) {
+      setTrimWarning("");
+      return;
+    }
+    if (sameTrim(fileTrim, corpusMeta.trim)) {
+      setTrimWarning("");
+      return;
+    }
+    setTrimWarning(
+      `This file was annotated on ${describeTrim(fileTrim)}, but the corpus ` +
+        `now serves ${describeTrim(corpusMeta.trim)}. Segments may not line up ` +
+        `with the labels in this file.`
+    );
+  }, [fileTrim, corpusMeta]); // eslint-disable-line
+
   // Ingestion only runs on a local backend (YouTube blocks datacenter IPs and a
   // hosted disk is ephemeral), so the button is hidden unless the backend says
   // it is available.
@@ -144,6 +172,23 @@ export default function App() {
   const describeError = (err) =>
     err.response?.data?.error || err.message || "Unknown error.";
 
+  const sameTrim = (a, b) => {
+    const norm = (t) => ({
+      start: t?.start ?? null,
+      end: t?.end ?? null,
+    });
+    const x = norm(a);
+    const y = norm(b);
+    return x.start === y.start && x.end === y.end;
+  };
+
+  const describeTrim = (t) => {
+    if (!t || (t.start == null && t.end == null)) return "untrimmed";
+    return `${secondsToInput(t.start) || "start"} → ${
+      secondsToInput(t.end) || "end"
+    }`;
+  };
+
   // Seconds → the "mm:ss" the range inputs expect; "" when unbounded.
   const secondsToInput = (value) => {
     if (value === null || value === undefined || value === "") return "";
@@ -180,6 +225,12 @@ export default function App() {
           // show what this snapshot actually covers.
           setStartTime(secondsToInput(res.data.trim?.start));
           setEndTime(secondsToInput(res.data.trim?.end));
+          setCorpusMeta({
+            video_id: res.data.video_id ?? null,
+            trim: res.data.trim ?? null,
+            fetched_at: res.data.fetched_at ?? null,
+            caption_count_untrimmed: res.data.caption_count ?? null,
+          });
         } else if (startTime || endTime) {
           // Live preview: apply the range locally so you can find the bounds
           // before committing them to the corpus.
@@ -190,6 +241,8 @@ export default function App() {
             (cap) => cap.start + cap.duration > start && cap.start < end
           );
         }
+
+        if (source !== "corpus") setCorpusMeta(null);
 
         setCaptions(loadedCaptions);
         setCaptionSource(source);
@@ -323,7 +376,14 @@ export default function App() {
   const saveAnnotations = () => {
     const data = {
       video_url: url,
+      video_id: corpusMeta?.video_id ?? extractYouTubeId(url),
       guideline_version: guidelineVersion,
+      // The window these annotations cover. Always present — null means the
+      // captions were not trimmed. Without this an export does not say which
+      // part of the VOD was annotated, and the segment indices mean nothing.
+      trim: corpusMeta ? corpusMeta.trim : null,
+      caption_source: captionSource,
+      corpus_fetched_at: corpusMeta?.fetched_at ?? null,
       captions,
       matchInfo,
       events,
@@ -357,6 +417,11 @@ export default function App() {
         ) {
           setGuidelineVersion(data.guideline_version);
         }
+
+        // Files written before the trim was recorded have no `trim` key at all;
+        // that is different from a file that recorded an untrimmed corpus entry,
+        // so keep undefined (unknown) distinct from null (known: no trim).
+        setFileTrim("trim" in data ? data.trim : undefined);
 
         if (Array.isArray(data.captions)) {
           setCaptions(
@@ -478,6 +543,12 @@ export default function App() {
                 </p>
               )}
             </div>
+          )}
+
+          {trimWarning && (
+            <p className="text-sm text-red-700 bg-red-50 border border-red-300 rounded px-3 py-2 text-center w-full break-words">
+              <strong>Trim mismatch.</strong> {trimWarning}
+            </p>
           )}
 
           {loadError && (

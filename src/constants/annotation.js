@@ -3,9 +3,9 @@
 
 // Guideline versions the tool knows about. Newest first.
 // Every annotation records the version it was made under (see guidelines §Versioning).
-export const GUIDELINE_VERSIONS = ["1.0"];
+export const GUIDELINE_VERSIONS = ["1.0", "2.0"];
 
-export const DEFAULT_GUIDELINE_VERSION = GUIDELINE_VERSIONS[0];
+export const DEFAULT_GUIDELINE_VERSION = GUIDELINE_VERSIONS[1];
 
 // The six discourse roles.
 export const LABEL_COLORS = {
